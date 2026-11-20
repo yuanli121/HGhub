@@ -1,4 +1,4 @@
-package com.hghub.player
+package com.hghub.integrated
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows

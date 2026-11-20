@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { onPluginAuthFailure, onPluginAuthSuccess, pluginCommand, pluginError, type InstalledPlugin } from "./client";
+import { installBundledPlugins } from "../bundled-plugins";
 import type { MediaItem } from "./protocol";
 import { clearMetadataCache } from './metadataCache';
 import { emptyUpdateState, pendingUpdates, tickPluginUpdates, type UpdateState } from "./updateClient";
@@ -31,6 +32,8 @@ export function HostProvider({ children }: { children: React.ReactNode }) {
   const [authPrompt, setAuthPrompt] = useState<{ id: string; message: string } | null>(null);
   const [updates, setUpdates] = useState(emptyUpdateState), startup = useRef<Promise<UpdateState> | null>(null), updateBusy = useRef(false);
   const refreshUpdates = useCallback(async () => { setUpdates(await pluginCommand<UpdateState>("updates.state")); }, []);
+  // 首启自动导入预置插件（整合版）：逐源导入，已导入的跳过，失败的下次启动重试
+  useEffect(() => { void installBundledPlugins(); }, []);
   useEffect(() => {
     let live = true;
     // StrictMode can subscribe twice; one host startup operation belongs to this app lifetime.

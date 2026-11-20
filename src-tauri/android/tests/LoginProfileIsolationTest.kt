@@ -1,4 +1,4 @@
-package com.hghub.player
+package com.hghub.integrated
 
 import android.webkit.WebView
 import android.webkit.WebViewClient

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "HGhub",
-  "version": "0.0.4",
-  "identifier": "com.hghub.player",
+  "productName": "黄果整合版",
+  "version": "0.0.5",
+  "identifier": "com.hghub.integrated",
   "build": {
     "beforeDevCommand": "node scripts/sync-android-network.mjs && pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "HGhub",
+        "title": "黄果整合版",
         "width": 1200,
         "height": 780,
         "minWidth": 900,

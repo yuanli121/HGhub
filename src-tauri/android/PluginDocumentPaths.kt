@@ -1,4 +1,4 @@
-package com.hghub.player
+package com.hghub.integrated
 
 import java.net.URI
 import java.net.URISyntaxException

@@ -17,14 +17,14 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri::plugin::Builder::<tauri::Wry, ()>::new("web-login")
         .setup(|app, api| {
-            let handle = api.register_android_plugin("com.hghub.player", "LoginWebViewPlugin")?;
+            let handle = api.register_android_plugin("com.hghub.integrated", "LoginWebViewPlugin")?;
             app.manage(android_login::AndroidLogin(handle));
             Ok(())
         }).build());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri::plugin::Builder::<tauri::Wry, ()>::new("plugin-documents")
         .setup(|app, api| {
-            let handle = api.register_android_plugin("com.hghub.player", "PluginDocumentsPlugin")?;
+            let handle = api.register_android_plugin("com.hghub.integrated", "PluginDocumentsPlugin")?;
             app.manage(android_documents::AndroidDocuments(handle));
             Ok(())
         }).build());
@@ -36,7 +36,7 @@ pub fn run() {
                 .setup(|app, api| {
                     #[cfg(target_os = "android")]
                     {
-                        let handle = api.register_android_plugin("com.hghub.player", "OrientationPlugin")?;
+                        let handle = api.register_android_plugin("com.hghub.integrated", "OrientationPlugin")?;
                         app.manage(commands::OrientationPlugin(handle));
                     }
                     #[cfg(not(target_os = "android"))]

@@ -2,9 +2,11 @@
   <img src="app-icon.svg" width="88" height="88" alt="HGhub 图标" />
 </p>
 
-<h1 align="center">HGhub</h1>
+<h1 align="center">黄果整合版</h1>
 
 <p align="center">一个通过插件连接内容的通用视频播放器。</p>
+
+> **整合版说明**：这是 [Minireel/HGhub](https://github.com/Minireel/HGhub) 的非官方整合版。预置 46 个社区内容源插件，首次启动自动导入，装上即用，无需手动安装插件。预置源可随时卸载，插件中心仍可自行导入其他插件。成人内容源默认隐藏，在设置中打开。许可证沿用上游 [PolyForm Noncommercial 1.0.0](LICENSE)，禁止商业用途。插件来源与署名见 [THIRD_PARTY_PLUGINS.md](THIRD_PARTY_PLUGINS.md)。
 
 <p align="center">
   <a href="#开始使用">开始使用</a> ·

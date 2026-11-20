@@ -1,4 +1,4 @@
-package com.hghub.player
+package com.hghub.integrated
 
 import android.content.*
 import android.os.*
@@ -32,7 +32,7 @@ class ProcessLoginIsolationTest {
             }
             override fun onServiceDisconnected(name: ComponentName) {}
         }
-        val intent = Intent().setClassName(context, "com.hghub.player.ProcessIsolationFixture")
+        val intent = Intent().setClassName(context, "com.hghub.integrated.ProcessIsolationFixture")
         val start = SystemClock.elapsedRealtime()
         assertTrue(context.bindService(intent, connection, Context.BIND_AUTO_CREATE))
         val result = try {

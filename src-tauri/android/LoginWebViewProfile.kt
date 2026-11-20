@@ -1,4 +1,4 @@
-package com.hghub.player
+package com.hghub.integrated
 
 import android.content.Context
 import android.view.ViewGroup
