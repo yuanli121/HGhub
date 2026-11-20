@@ -25,7 +25,9 @@ import p_haose from "./haose.js?raw";
 import p_hdmoli from "./hdmoli.js?raw";
 import p_hkdoll from "./hkdoll.js?raw";
 import p_hlws_source from "./hlws.source.js?raw";
+import p_hongguo from "./hongguo.js?raw";
 import p_huangguo from "./huangguo.js?raw";
+import p_iptv from "./iptv.js?raw";
 import p_j18 from "./j18.js?raw";
 import p_jisu_source from "./jisu.source.js?raw";
 import p_jpyy from "./jpyy.js?raw";
@@ -42,6 +44,7 @@ import p_porny from "./porny.js?raw";
 import p_rou from "./rou.js?raw";
 import p_tangxin from "./tangxin.js?raw";
 import p_tangxin_vlog from "./tangxin.vlog.js?raw";
+import p_tvbox from "./tvbox.js?raw";
 import p_wwgz from "./wwgz.js?raw";
 import p_xhamster from "./xhamster.js?raw";
 import p_xingya from "./xingya.js?raw";
@@ -73,7 +76,9 @@ const BUNDLED: Record<string, string> = {
   "hdmoli": p_hdmoli,
   "hkdoll": p_hkdoll,
   "hlws.source": p_hlws_source,
+  "hongguo": p_hongguo,
   "huangguo": p_huangguo,
+  "iptv": p_iptv,
   "j18": p_j18,
   "jisu.source": p_jisu_source,
   "jpyy": p_jpyy,
@@ -90,6 +95,7 @@ const BUNDLED: Record<string, string> = {
   "rou": p_rou,
   "tangxin": p_tangxin,
   "tangxin.vlog": p_tangxin_vlog,
+  "tvbox": p_tvbox,
   "wwgz": p_wwgz,
   "xhamster": p_xhamster,
   "xingya": p_xingya,

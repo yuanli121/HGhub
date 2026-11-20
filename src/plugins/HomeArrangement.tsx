@@ -21,7 +21,7 @@ export function ReorderList({ ids, label, name, render, change }: {
     <span draggable className="hpp-drag-handle" aria-label={`拖动 ${name(id)}`} title="拖动调整顺序，或使用上移/下移按钮"
       onDragStart={e => { dragged.current = id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); }} onDragEnd={() => { dragged.current = null; }}>⠿</span>
     <div className="hpp-reorder-label">{render ? render(id) : name(id)}</div>
-    <button aria-label={`上移 ${name(id)}`} disabled={i === 0} onClick={() => move(id, -1)}>上移</button><button aria-label={`下移 ${name(id)}`} disabled={i === ids.length - 1} onClick={() => move(id, 1)}>下移</button>
+    <button aria-label={`置顶 ${name(id)}`} disabled={i === 0} onClick={() => change([id, ...ids.filter(v => v !== id)])}>置顶</button><button aria-label={`上移 ${name(id)}`} disabled={i === 0} onClick={() => move(id, -1)}>上移</button><button aria-label={`下移 ${name(id)}`} disabled={i === ids.length - 1} onClick={() => move(id, 1)}>下移</button>
   </div>)}</div>;
 }
 export default function HomeArrangement({ sources }: { sources: InstalledPlugin[] }) {
