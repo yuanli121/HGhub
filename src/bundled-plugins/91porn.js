@@ -1,7 +1,7 @@
 export const meta = {
   id: '91porn',
   name: '91porn',
-  version: '1.0.0',
+  version: '1.0.3',
   protocol: 1,
   description: '91porn（含镜像 sp2026.com，可在线路中切换）：分类、搜索、详情与 MP4 播放。',
   author: 'community',
@@ -36,7 +36,11 @@ const CATEGORIES = [
 ];
 
 export default function (hg) {
+  // 主站若返回 403，自动切到已配置的 sp2026 镜像；报告 2026-11-27 实测主站 403、镜像 200。
+  // endpoint.current 仍保留用户所选线路，自动切换只在本次插件实例内生效。
+  let autoOrigin = '';
   function origin() {
+    if (autoOrigin) return autoOrigin;
     const cur = hg.endpoint && hg.endpoint.current;
     if (cur && typeof cur.url === 'string' && cur.url) return cur.url.replace(/\/$/, '');
     return SITE;
@@ -65,8 +69,8 @@ export default function (hg) {
       url,
       headers: h,
       responseType: 'text',
-      timeoutMs: 15000,
-      retry: 1,
+      timeoutMs: extra && extra.timeoutMs ? extra.timeoutMs : 15000,
+      retry: extra && extra.retry !== undefined ? extra.retry : 1,
       credentials: 'omit',
       maxBytes: 8 * 1024 * 1024,
       signal: ctx && ctx.signal,
@@ -76,9 +80,44 @@ export default function (hg) {
   }
 
   async function fetchHtml(url, ctx) {
-    const res = await request(url, ctx);
-    if (!res.ok) fail('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）');
-    return res.data;
+    // 只对明确的站点故障换站；取消、认证、内容不存在不能借换线绕过去。
+    let parsed;
+    try { parsed = new URL(url); } catch (_) { return (await request(url, ctx)).data; }
+    const known = [SITE, MIRROR];
+    const source = parsed.origin;
+    if (known.indexOf(source) < 0) {
+      const res = await request(url, ctx);
+      if (!res.ok) fail('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）');
+      return res.data;
+    }
+    const candidates = [source].concat(known.filter(function (o) { return o !== source; }));
+    let lastError;
+    for (let i = 0; i < candidates.length; i++) {
+      if (ctx && ctx.signal && ctx.signal.aborted) fail('CANCELLED', '调用已取消');
+      const base = candidates[i];
+      try {
+        // 每站最多 6 秒、不在坏站原地重试，给镜像及后续解析留出调用预算。
+        const res = await request(base + parsed.pathname + parsed.search, ctx, { referer: base + '/', timeoutMs: 6000, retry: 0 });
+        if (res.ok) {
+          // 不把「200 的人机验证/空页」记成健康线路。
+          const body = String(res.data || '');
+          if (!body.trim() || /<title>\s*(?:Just a moment|Access denied)|cf-chl-|id=["']challenge-form/i.test(body)) {
+            fail('UPSTREAM_ERROR', '站点返回了验证页或空页面');
+          }
+          autoOrigin = base;
+          if (i && hg.log && hg.log.info) hg.log.info('主线路不可用，已自动切换到 ' + base);
+          return res.data;
+        }
+        const retryable = [403, 408, 429].indexOf(res.status) >= 0 || res.status >= 500;
+        if (!retryable) fail(res.status === 404 ? 'NOT_FOUND' : res.status === 401 ? 'AUTH_REQUIRED' : 'UPSTREAM_CHANGED', '页面请求失败（HTTP ' + res.status + '），不自动换站');
+        fail('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）');
+      } catch (e) {
+        if (ctx && ctx.signal && ctx.signal.aborted) fail('CANCELLED', '调用已取消');
+        if (!e || ['NETWORK', 'TIMEOUT', 'UPSTREAM_ERROR'].indexOf(e.code) < 0) throw e;
+        lastError = e;
+      }
+    }
+    throw lastError;
   }
 
   function encodeUrl(u) { try { return encodeURI(decodeURI(u)); } catch (e) { return encodeURI(u); } }
@@ -250,6 +289,21 @@ export default function (hg) {
 
   function guessFormat(url) { return /\.m3u8(\?|$)/i.test(url) ? 'hls' : 'progressive'; }
 
+  // iOS/Safari 的硬件解码只支持 8 位 H.264；站内约 5% 的视频是 High 10（10 位），WebKit 直接报
+  // MEDIA_ERR_SRC_NOT_SUPPORTED。读文件头前 4KB 里的 avcC（实测 60 部都在第 546~558 字节），profile_idc=110 即 10 位。
+  // 探测失败（超时/网络）一律放行，宁可让播放器去试，也不误杀能播的视频。
+  async function avcProfile(url, ctx) {
+    try {
+      const res = await hg.http.fetch({ url, headers: Object.assign({ Range: 'bytes=0-4095' }, streamHeaders()), responseType: 'bytes', timeoutMs: 6000, maxBytes: 64 * 1024, signal: ctx && ctx.signal });
+      if (!res.ok && res.status !== 206) return 0;
+      const b = res.data;
+      for (let i = 0; i + 8 < b.length; i++) {
+        if (b[i] === 0x61 && b[i + 1] === 0x76 && b[i + 2] === 0x63 && b[i + 3] === 0x43) return b[i + 5];   // 'avcC' 后：version, profile_idc
+      }
+    } catch (_) {}
+    return 0;
+  }
+
   function streamHeaders() {
     const h = headers();
     // 视频 CDN（nginx）对不带 Connection 头的 curl 类客户端会在 TLS 层断开；浏览器/AVPlayer 均带此头
@@ -350,6 +404,14 @@ export default function (hg) {
         let m;
         if (!urls.length) while ((m = srcRe.exec(html))) if (urls.indexOf(m[1]) < 0) urls.push(m[1]);
         if (!urls.length) fail('UPSTREAM_CHANGED', '未解析到播放地址');
+        const mp4 = absUrl(urls[0]);
+        if (guessFormat(mp4) === 'progressive') {
+          const profile = await avcProfile(mp4, ctx);
+          if (profile === 110 || profile === 122 || profile === 244) {
+            const e = new hg.PluginError('UNSUPPORTED', '这部视频是 10 位色深（H.264 ' + (profile === 110 ? 'High 10' : 'profile ' + profile) + '），iPhone 的播放器无法解码，站点也没有提供其它清晰度');
+            throw e;
+          }
+        }
         return {
           streams: urls.map(function (u, i) {
             return { url: absUrl(u), kind: 'media', format: guessFormat(u), headers: streamHeaders(), label: '线路 ' + (i + 1) };

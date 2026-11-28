@@ -1,7 +1,7 @@
 export const meta = {
   id: 'mrds',
   name: '每日大赛',
-  version: '1.0.1',
+  version: '1.0.3',
   protocol: 1,
   description: '每日大赛（mrds.com，吃瓜站，含多条镜像线路可切换）：15 个栏目、搜索、详情与 HLS 播放。',
   author: 'community',
@@ -39,7 +39,10 @@ function imgRef(url) {
 }
 
 export default function (hg) {
+  const ENDPOINT_URLS = [SITE, 'https://www.mrds66.com', 'https://capital.opukapynj.cc'];
+  let activeOrigin = '';
   function origin() {
+    if (activeOrigin) return activeOrigin;
     const cur = hg.endpoint && hg.endpoint.current;
     if (cur && typeof cur.url === 'string' && cur.url) return cur.url.replace(/\/$/, '');
     return SITE;
@@ -56,11 +59,49 @@ export default function (hg) {
     try { return encodeURI(decodeURI(u)); } catch (e) { return encodeURI(u); }
   }
 
+  // 同一路径请求已声明的镜像，不拿首页 200 当作目标页面/视频可用。
+  // 仅在本实例记住成功镜像，不修改宿主当前线路或持久设置。
   async function fetchHtml(url, ctx, allow404) {
-    const res = await hg.http.fetch({ url, headers: headers(), responseType: 'text', timeoutMs: 15000, retry: 1, credentials: 'omit', maxBytes: 6 * 1024 * 1024, signal: ctx && ctx.signal });
-    if (res.status === 404 && allow404) return '';
-    if (!res.ok) fail('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）');
-    return res.data;
+    const deadline = Date.now() + 15000;
+    const known = ENDPOINT_URLS.slice();
+    const parsed = new URL(url);
+    const candidates = [parsed.origin];
+    if (known.indexOf(parsed.origin) >= 0) known.forEach(function (u) { if (candidates.indexOf(u) < 0) candidates.push(u); });
+    let last;
+    for (let i = 0; i < candidates.length; i++) {
+      if (ctx && ctx.signal && ctx.signal.aborted) fail('CANCELLED', '调用已取消');
+      const left = deadline - Date.now();
+      if (left <= 0) { last = new hg.PluginError('TIMEOUT', '镜像切换预算已用尽'); break; }
+      const base = candidates[i];
+      let res;
+      try {
+        res = await hg.http.fetch({ url: base + url.slice(parsed.origin.length),
+          headers: Object.assign({}, headers(), { Referer: base + '/' }), responseType: 'text',
+          timeoutMs: Math.min(6000, left), retry: 0, credentials: 'omit', maxBytes: 6 * 1024 * 1024, signal: ctx && ctx.signal });
+      } catch (e) {
+        if (!e || ['NETWORK', 'TIMEOUT'].indexOf(e.code) < 0) throw e;
+        last = e; continue;
+      }
+      if (ctx && ctx.signal && ctx.signal.aborted) fail('CANCELLED', '调用已取消');
+      if (res.status === 404) { if (allow404) return ''; fail('NOT_FOUND', '页面不存在'); }
+      if (res.status === 401) fail('AUTH_REQUIRED', '页面需要登录');
+      if (res.status === 429) fail('RATE_LIMITED', '站点请求过于频繁，请稍后重试');
+      if (res.status === 403 || res.status === 408 || res.status >= 500) {
+        last = new hg.PluginError('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）'); continue;
+      }
+      if (!res.ok) fail('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）');
+      const body = typeof res.data === 'string' ? res.data : '';
+      const sample = body.slice(0, 65536);
+      // 目标页面必须有本站内容标记；空页、停放页、200 验证页不晋升为当前镜像。
+      const challenge = /cf-chl-|challenge-platform|<title>\s*(?:Just a moment|Attention Required)|Checking your browser|verify you are human/i.test(sample);
+      const content = /class=["'][^"']*(?:dplayer|post-title|post-content|post-card|post-list|page-navigator)|<article\b/i.test(body);
+      if (!body.trim() || challenge || !content) {
+        last = new hg.PluginError('UPSTREAM_CHANGED', '镜像未返回可识别的目标内容页'); continue;
+      }
+      activeOrigin = base;
+      return body;
+    }
+    throw last || new hg.PluginError('NETWORK', '所有已声明镜像均不可达');
   }
 
   // 下一页：分页条里存在 <li class="next">（越界页会 404，不能按条目数判断）
@@ -180,7 +221,7 @@ export default function (hg) {
         const idx = mm[2] ? parseInt(mm[2], 10) : 0;
         const html = await fetchHtml(origin() + '/archives/' + mm[1] + '/', ctx);
         const list = dplayers(html);
-        if (!list.length) fail('UNAVAILABLE', '该文章没有视频（可能是纯图文帖）');
+        if (!list.length) fail('UNSUPPORTED', '该文章没有视频（可能是纯图文帖）');
         const v = list[idx] || list[0];
         // 签名 URL（auth_key）有时效，每次现取；CDN 校验 Referer
         return { streams: [{ url: abs(v.url), kind: 'media', format: /m3u8/i.test(v.url + v.type) ? 'hls' : 'progressive', headers: headers(), label: '默认' }] };

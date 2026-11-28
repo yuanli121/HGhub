@@ -1,7 +1,7 @@
 export const meta = {
   id: 'xx9',
   name: '主播视频',
-  version: '1.0.2',
+  version: '1.0.4',
   protocol: 1,
   description: '主播视频（xx9.com）：点播源。分类、搜索、专题、详情与 HLS 播放。接口为 AES-ECB 加密网关（密钥按时间戳尾数轮换），自动获取 jwtToken 与游客 accessToken；封面为单字节 XOR 加密。',
   author: 'community',
@@ -326,11 +326,16 @@ export default function (hg) {
     return rs.length > 0 && rs.every(Boolean);
   }
   async function pickLine(cfg, path, ctx) {
-    if (lineCache && lineCache.at > Date.now() - 10 * 60 * 1000 && lineCache.sid < cfg.lines.length) return lineCache.sid;
+    // 线路状态会变（有些 HTTPS 节点会重定向到 HTTP，被宿主安全策略拒绝）。
+    // 旧逻辑把失败的线路缓存 10 分钟，且无线路通过时仍盲目返回 0，造成播放黑屏。
+    if (lineCache && lineCache.at > Date.now() - 60 * 1000 && lineCache.sid < cfg.lines.length) {
+      if (await lineWorks(cfg.lines[lineCache.sid].line + path, ctx)) return lineCache.sid;
+      lineCache = null;
+    }
     const n = cfg.lines.length;
     const winner = await new Promise(function (resolve) {
       let left = n;
-      if (!n) resolve(0);
+      if (!n) resolve(-1);
       cfg.lines.forEach(function (l, i) {
         lineWorks(l.line + path, ctx).then(function (ok) {
           if (ok) resolve(i);
@@ -339,7 +344,7 @@ export default function (hg) {
       });
     });
     if (winner >= 0) { lineCache = { sid: winner, at: Date.now() }; return winner; }
-    return 0;
+    fail('NETWORK', '所有播放线路都未通过清单/分片预检（可能是节点故障或 HTTPS 降级被安全策略阻止），请稍后重试或换一部');
   }
 
   function addrList(vod) {
@@ -427,7 +432,7 @@ export default function (hg) {
           if (a.duration) e.durationSec = a.duration;
           return e;
         });
-        if (!eps.length) fail('UNAVAILABLE', '该视频没有可播放地址');
+        if (!eps.length) fail('CONTENT_LOCKED', '该视频没有可播放地址');
         delete base.entryEpisodeId;
         base.playlists = [{ id: 'main', label: '默认', episodes: eps }];
         return base;
@@ -441,7 +446,7 @@ export default function (hg) {
         const list = addrList(vod);
         const idx = Math.max(0, Math.min(list.length - 1, parseInt(params.episodeId || '0', 10) || 0));
         const a = list[idx];
-        if (!a) fail('UNAVAILABLE', '该视频没有可播放地址');
+        if (!a) fail('CONTENT_LOCKED', '该视频没有可播放地址');
         const servers = cfg.lines.map(function (l, i) { return { id: String(i), label: l.name }; });
         let sid = params.serverId != null && params.serverId !== '' ? parseInt(params.serverId, 10) : -1;
         const path = a.addr.charAt(0) === '/' ? a.addr : '/' + a.addr;
@@ -474,13 +479,16 @@ export default function (hg) {
       },
     },
 
-    // 封面/头像：首字节为 XOR 密钥，其余字节逐一异或还原
-    transformResource(params) {
+    // 封面图片可能较大；超过 32 KiB 就分块让出，避免 QuickJS 单段同步 XOR 撞到宿主 1 秒硬上限。
+    async transformResource(params) {
       const d = params.data;
       if (params.name !== 'xor1' || !d || d.length < 2) return { data: d };
       const k = d[0];
       const out = new Uint8Array(d.length - 1);
-      for (let i = 1; i < d.length; i++) out[i - 1] = d[i] ^ k;
+      for (let i = 1; i < d.length; i++) {
+        out[i - 1] = d[i] ^ k;
+        if ((i & 0x7fff) === 0) await new Promise(function (resolve) { setTimeout(resolve, 0); });
+      }
       let ct = 'image/jpeg';
       if (out[0] === 0x89 && out[1] === 0x50) ct = 'image/png';
       else if (out[0] === 0x47 && out[1] === 0x49) ct = 'image/gif';

@@ -27,5 +27,18 @@ export default defineConfig({
     target: "es2021",
     minify: "esbuild",
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        // 大依赖和 57 个预置插件源码单独成块，减小主包、并行加载
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("hls.js")) return "vendor-hls";
+            if (id.includes("/react") || id.includes("react-dom")) return "vendor-react";
+            return "vendor";
+          }
+          if (id.includes("bundled-plugins")) return "bundled-plugins";
+        },
+      },
+    },
   },
 });

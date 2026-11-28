@@ -1,7 +1,7 @@
 export const meta = {
   id: 'avtoday',
   name: 'avtoday',
-  version: '1.0.3',
+  version: '1.0.4',
   protocol: 1,
   description: 'avtoday：分类、搜索、详情与 HLS 播放。',
   author: 'community',
@@ -83,6 +83,8 @@ export default function (hg) {
   function parseCards(html) {
     const doc = hg.html.parse(html);
     const items = [];
+    const seen = {};   // 首页同一部片会在多个板块重复渲染（实测 29 个块里只有 22 个唯一地址），
+                       // 不去重宿主会逐条报 warn「重复条目已丢弃」；pathId 为空的是广告位（如 /live），直接跳过
     const nodes = doc.select('.thumbnail');
     for (let i = 0; i < nodes.length; i++) {
       const a = nodes[i].first('.video-title a');
@@ -90,11 +92,14 @@ export default function (hg) {
       if (!title || title.indexOf('[廣告]') >= 0) continue;
       const href = a.attr('href');
       if (!href) continue;
+      const id = pathId(href);
+      if (!id || id === '/' || seen[id]) continue;
+      seen[id] = true;
       const preview = nodes[i].first('.preview-video');
       const style = preview && preview.attr('style');
       const coverM = style && style.match(/url\('(.*?)'\)/);
       const tag = nodes[i].first('.video-tag');
-      const item = { id: pathId(href), title: title.trim(), type: 'movie' };
+      const item = { id: id, title: title.trim(), type: 'movie' };
       if (coverM) item.cover = absUrl(coverM[1]);
       if (tag) {
         const note = tag.text().trim();
@@ -159,7 +164,7 @@ export default function (hg) {
         if (!q) return { items: [], next: null };
         const page = pageOf(params && params.cursor);
         const res = await hg.http.fetch({ url: origin() + '/search?s=' + encodeURIComponent(q) + '&page=' + page, headers: headers(), responseType: 'text', timeoutMs: 15000, signal: ctx && ctx.signal });
-        if (res.status === 403 || /Just a moment|cf-chl/.test(res.data || '')) fail('UNAVAILABLE', '站点搜索被 Cloudflare 人机验证拦截，暂不可用；请从分类浏览');
+        if (res.status === 403 || /Just a moment|cf-chl/.test(res.data || '')) fail('UPSTREAM_ERROR', '站点搜索被 Cloudflare 人机验证拦截，暂不可用；请从分类浏览');
         if (!res.ok) fail('UPSTREAM_ERROR', '搜索暂时不可用（HTTP ' + res.status + '）');
         const html = res.data;
         const items = parseCards(html);

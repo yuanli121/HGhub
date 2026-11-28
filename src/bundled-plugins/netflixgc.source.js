@@ -1,17 +1,19 @@
 export const meta = {
   id: 'netflixgc.source',
   name: '奈飞工厂',
-  version: '1.0.0',
+  version: '1.0.1',
   protocol: 1,
   kind: 'source',
   description: '奈飞工厂（netflixgc.com）：首页与分类走站内 ds_api/vod 接口（POST 返回 JSON），搜索走 /vodsearch，播放页 player_aaaa 的 encrypt=2 用 base64+unescape 解开就是 m3u8。',
   mature: false,
-  linkDomains: ['www.netflixgc.com', 'netflixgc.com', 'vip.ffzy-play7.com'],
+  linkDomains: ['p.bfp261112.com', 'img1.wsyzy.org', 'image.baidu.com', 'www.netflixgc.com', 'netflixgc.com', 'vip.ffzy-play7.com'],
   timeouts: { read: 20, playback: 30 },
 };
 
 const SITE = 'https://www.netflixgc.com';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+const HIDDEN_CATS = new Set(['57']);
 
 const CATS = [
   { id: '1', label: '电影' },
@@ -19,7 +21,6 @@ const CATS = [
   { id: '3', label: '漫剧' },
   { id: '23', label: '综艺' },
   { id: '24', label: '纪录片' },
-  { id: '57', label: '直播' },
 ];
 
 const HOME_SECTIONS = [
@@ -104,9 +105,22 @@ export default hg => {
   }
 
   function coverOf(raw) {
-    const url = norm(raw);
+    let url = norm(raw).trim();
     if (!url) return '';
-    if (url.startsWith('//')) return `https:${url}`;
+    if (url.startsWith('//')) url = `https:${url}`;
+    // 站点把封面套了一层百度图片代理，代理返回 0 字节空响应，这里取出真实地址
+    if (/^https?:\/\/image\.baidu\.com\/search\/down\?/i.test(url)) {
+      const m = url.match(/[?&]url=([^&]+)/i);
+      if (m) {
+        let inner = m[1];
+        try {
+          inner = decodeURIComponent(inner);
+        } catch {
+          // 保持原样
+        }
+        if (/^https?:\/\//i.test(inner)) url = inner;
+      }
+    }
     if (url.startsWith('/')) return `${SITE}${url}`;
     return /^https?:\/\//i.test(url) ? url.replace(/^http:\/\//i, 'https://') : '';
   }
@@ -206,7 +220,7 @@ export default hg => {
 
     catalog: {
       async getCategories() {
-        return CATS.map(c => ({ id: c.id, label: c.label }));
+        return CATS.filter(c => !HIDDEN_CATS.has(c.id)).map(c => ({ id: c.id, label: c.label }));
       },
 
       async list(params, ctx) {

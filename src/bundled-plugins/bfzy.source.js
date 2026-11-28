@@ -1,12 +1,12 @@
 export const meta = {
   id: 'bfzy.source',
   name: '暴风资源',
-  version: '1.0.0',
+  version: '1.0.4',
   protocol: 1,
   kind: 'source',
   description: '暴风资源采集接口单文件数据源：搜索、分类、详情与 m3u8 直连播放。',
   defaultHeaders: { Referer: 'https://bfzyapi.com/' },
-  timeouts: { read: 20 },
+  timeouts: { read: 20, playback: 25 },
 };
 
 const API = 'https://bfzyapi.com/api.php/provide/vod/';
@@ -14,6 +14,10 @@ const TYPE_BY_ID = { 20: 'movie', 30: 'series', 39: 'anime', 45: 'variety', 58: 
 
 function mediaType(row) {
   const byId = TYPE_BY_ID[Number(row.type_id)];
+  // 采集站的「电影」栏目里混着大量连续剧，type_id 只说明挂在哪个栏目下。
+  // 真正决定界面的是集数：标成 movie 宿主就按电影渲染，分集列表出不来，点播放只能干等。
+  const serial = Number(row.vod_serial);
+  if (byId === 'movie' && Number.isFinite(serial) && serial > 1) return 'series';
   if (byId) return byId;
   const id = Number(row.type_id);
   if (id >= 40 && id <= 44) return 'anime';
@@ -29,12 +33,13 @@ function mediaType(row) {
   if (/电影|片/.test(name)) return 'movie';
   return 'other';
 }
+const HIDDEN_CATS = new Set(['51', '52', '53', '58']);
+
 const HOME_ROWS = [
   { id: '20', title: '电影' },
   { id: '30', title: '连续剧' },
   { id: '39', title: '动漫' },
   { id: '45', title: '综艺' },
-  { id: '58', title: '短剧' },
 ];
 
 const norm = s => (typeof s === 'string' ? s : '');
@@ -109,8 +114,54 @@ function flagLabel(flag) {
   return flag;
 }
 
-function streamUrlFrom(row, playlistId, episodeId) {
-  const groups = norm(row.vod_play_url).split('$$$');
+// 暴风的分发域名共用同一份 /video/{vod_en}/{段}/index.m3u8 目录结构，同一集常被复制到
+// 好几个域名上，可以按 host 对换。但覆盖是逐个资源复制的，不保证通——
+// 实测《牧神记》第 1–59 集里，v.fengbao8.com 有 59/59，c1.rrcdnbf6/5 各只有前 31 集，
+// 其余域名一条都没有。所以这里不做「谁是谁的镜像」的假设，全量并列去试，谁出清单用谁。
+const MIRROR_HOSTS = [
+  'c1.rrcdnbf6.com',
+  'c1.rrcdnbf5.com',
+  'c1.rrcdnbf4.com',
+  'c1.ddbbffcdn.com',
+  'v.fengbao8.com',
+  'v.fengbao14.com',
+  'fengbao13.com',
+  'v.baofeng9.com',
+  'bfeng11.com',
+  's3.bfllvip.com',
+  'p.bvvvvvvv7f.com',
+  'p.bvvvvvvvvv1f.com',
+];
+
+function mirrorsOf(url) {
+  const m = norm(url).match(/^(https?:\/\/)([^/]+)(\/.*)$/i);
+  if (!m) return [];
+  const host = m[2].toLowerCase();
+  if (!MIRROR_HOSTS.includes(host)) return [];
+  return MIRROR_HOSTS.filter(h => h !== host)
+    .slice(0, 6)
+    .map(h => `${m[1]}${h}${m[3]}`);
+}
+
+async function probeStream(hg, url, ctx) {
+  try {
+    const res = await hg.http.fetch({
+      url,
+      responseType: 'text',
+      headers: { Referer: 'https://bfzyapi.com/' },
+      timeoutMs: 6000,
+      maxBytes: 512 * 1024,
+      retry: 0,
+      signal: ctx.signal,
+    });
+    return res.ok && norm(res.data).trimStart().startsWith('#EXTM3U');
+  } catch (error) {
+    if (error && error.code === 'CANCELLED') throw error;
+    return false;
+  }
+}
+
+function streamUrlFrom(row, playlistId, episodeId) {  const groups = norm(row.vod_play_url).split('$$$');
   const gi = Number((String(playlistId).match(/^p(\d+)$/) || [])[1]);
   const groupIdx = Number.isInteger(gi) ? gi : 0;
   const group = groups[groupIdx] || '';
@@ -187,7 +238,7 @@ export default hg => {
       async getCategories(params, ctx) {
         const data = await call({ ac: 'list', pg: 1 }, ctx);
         if (!Array.isArray(data.class)) return HOME_ROWS.map(r => ({ id: r.id, label: r.title }));
-        const top = data.class.filter(c => Number(c.type_pid) === 0);
+        const top = data.class.filter(c => Number(c.type_pid) === 0 && !HIDDEN_CATS.has(String(c.type_id)));
         return top.map(c => {
           const kids = data.class.filter(k => Number(k.type_pid) === Number(c.type_id));
           const cat = { id: String(c.type_id), label: norm(c.type_name) };
@@ -199,6 +250,7 @@ export default hg => {
       async list(params, ctx) {
         const id = String(params.categoryId || '');
         if (!/^\d+$/.test(id)) throw new hg.PluginError('INVALID_ARGUMENT', '分类 ID 不合法');
+        if (HIDDEN_CATS.has(id)) throw new hg.PluginError('INVALID_ARGUMENT', '这个分类已隐藏');
         const data = await call({ ac: 'list', t: id, pg: cursorPage(params.cursor) }, ctx);
         return pageOf(data, toItem);
       },
@@ -224,6 +276,13 @@ export default hg => {
         const playlists = parsePlaylists(row);
         if (!playlists.length) throw new hg.PluginError('CONTENT_LOCKED', '该作品暂无可用播放地址');
         detail.playlists = playlists;
+        // 单集还是多集只看真正解析出来的集数；动漫别被硬掰成剧集，只把电影改判。
+        const total = playlists[0].episodes.length;
+        if (total > 1) {
+          if (detail.type === 'movie') detail.type = 'series';
+          detail.episodeCount = total;
+          detail.totalEpisodes = total;
+        }
         const people = [];
         if (norm(row.vod_director)) people.push({ name: norm(row.vod_director), role: '导演' });
         if (norm(row.vod_actor))
@@ -242,13 +301,49 @@ export default hg => {
         const playlists = parsePlaylists(row);
         if (!playlists.length) throw new hg.PluginError('CONTENT_LOCKED', '该作品暂无可用播放地址');
         const playlist = playlists.find(p => p.id === params.playlistId) || playlists[0];
-        const episode = playlist.episodes.find(e => e.id === params.episodeId);
-        if (!episode) throw new hg.PluginError('INVALID_ARGUMENT', '分集不存在');
+
+        // 采集源的播放列表随时会被改写，集数、组顺序都可能变，宿主持有的 episodeId
+        // 未必还能精确命中。命中不了就退回按序号定位，再不行退第一集，
+        // 总之别把「分集找不到」这种内部状态当播放失败甩给用户。
+        const wanted = norm(params.episodeId);
+        let pos = playlist.episodes.findIndex(e => e.id === wanted);
+        if (pos < 0) {
+          const tail = wanted.match(/(\d+)$/);
+          const n = tail ? Number(tail[1]) : NaN;
+          if (Number.isInteger(n)) {
+            pos = playlist.episodes.findIndex(e => e.episodeNumber === n || e.index === n);
+            if (pos < 0 && n >= 1 && n <= playlist.episodes.length) pos = n - 1;
+          }
+        }
+        if (pos < 0) pos = 0;
+        const episode = playlist.episodes[pos];
+
         const url = streamUrlFrom(row, playlist.id, episode.id);
         if (!url) throw new hg.PluginError('UPSTREAM_CHANGED', '分集地址已失效');
-        return {
-          streams: [{ url, kind: 'media', format: /\.m3u8($|\?)/i.test(url) ? 'hls' : 'progressive', label: episode.label }],
+        const stream = {
+          url,
+          kind: 'media',
+          format: /\.m3u8($|\?)/i.test(url) ? 'hls' : 'progressive',
+          label: episode.label,
         };
+
+        // 采集接口给的地址是硬编码在数据里的，站点会换 CDN，旧的就成了死链。
+        // 但「我这台机器探不通」不等于「播不了」——线路、劫持、edge 回源差异都会让
+        // 探测失败而播放器照样能播。所以探测只用来找镜像，绝不拿它拦播放。
+        if (await probeStream(hg, url, ctx)) {
+          return { streams: [stream] };
+        }
+        // 原地址探不通就并行试同组镜像，哪个能出清单用哪个。
+        const alts = mirrorsOf(url);
+        if (alts.length) {
+          const hit = (
+            await Promise.all(alts.map(alt => probeStream(hg, alt, ctx).then(ok => (ok ? alt : null))))
+          ).find(Boolean);
+          if (hit) return { streams: [{ ...stream, url: hit }] };
+        }
+        // 原地址和镜像都探不通，仍然原样交出去：宿主的播放器有自己的重试和 refresh，
+        // 由它判死比插件替用户判死更靠谱。
+        return { streams: [stream] };
       },
     },
   };

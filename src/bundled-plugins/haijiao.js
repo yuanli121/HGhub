@@ -1,7 +1,7 @@
 export const meta = {
   id: 'haijiao',
   name: '海角',
-  version: '1.0.0',
+  version: '1.0.1',
   protocol: 1,
   description: '海角社区：热门帖、视频帖、最新、视频中心（分类与封面）。列表/详情/封面匿名可用；播放需要登录令牌，在插件设置里填写。',
   author: 'community',
@@ -284,7 +284,7 @@ export default function (hg) {
         if (!attachmentId || !resourceId) fail('INVALID_ARGUMENT', '分集参数无效');
         const d = await api('/api/attachment', ctx, { post: { id: attachmentId, resource_id: resourceId, resource_type: type, line: '', is_ios: 1 } });
         const remote = (d && (d.remoteUrl || d.url)) || '';
-        if (!remote) fail('UNAVAILABLE', '站点没有下发播放地址（可能需要购买或登录态已失效）');
+        if (!remote) fail('CONTENT_LOCKED', '站点没有下发播放地址（可能需要购买或登录态已失效）');
 
         // 主清单下钻一层到媒体清单，key 材料在该清单同目录的 .jpg 里
         let plUrl = absUrl(remote);

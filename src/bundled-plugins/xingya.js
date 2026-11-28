@@ -1,7 +1,7 @@
 export const meta = {
   id: 'xingya',
   name: '星芽短剧',
-  version: '1.0.3',
+  version: '1.0.4',
   protocol: 1,
   description: '星芽短剧 App 接口：分类、搜索、详情与直链播放。登录令牌保存在插件存储中。',
   author: 'community',
@@ -271,6 +271,9 @@ export default function (hg) {
         }
         if (!url && theaters[0]) url = theaters[0].son_video_url;
         if (!url) fail('UPSTREAM_CHANGED', '未解析到播放地址');
+        // 接口下发的是 http://qcapp.xingya.com.cn/...，宿主只接受 https（未声明 allowInsecureHttp），
+        // 否则流会被全部丢弃并报「没有合法可播放流」。同域 https 实测可用（2026-11-21）。
+        url = String(url).replace(/^http:\/\//i, 'https://');
         return {
           streams: [{
             url,

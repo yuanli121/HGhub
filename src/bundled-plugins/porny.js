@@ -1,7 +1,7 @@
 export const meta = {
   id: 'porny',
   name: '91Porny（九色）',
-  version: '1.0.0',
+  version: '1.0.1',
   protocol: 1,
   description: '91Porny / 九色（91porny.com）：14 个榜单分类、搜索、详情与 HLS 播放。',
   author: 'community',
@@ -174,7 +174,7 @@ export default function (hg) {
           src = m && m[0];
         }
         if (!src) {
-          fail('UNAVAILABLE', '详情页没有返回可播放地址（可能需要会员）');
+          fail('CONTENT_LOCKED', '详情页没有返回可播放地址（可能需要会员）');
         }
         return { streams: [{ url: abs(src), kind: 'media', format: /\.m3u8/i.test(src) ? 'hls' : 'progressive', headers: headers(), label: '默认' }] };
       },

@@ -1,7 +1,7 @@
 export const meta = {
   id: 'bl911',
   name: '911爆料网',
-  version: '1.0.1',
+  version: '1.0.2',
   protocol: 1,
   description: '911爆料网（吃瓜爆料、网红黑料）：图文文章列表与详情，以及帖子内嵌视频（DPlayer HLS）的分类、搜索、播放。封面按站点前端的 AES-CBC 图片协议解密。站点常换 CloudFront 地址，可在线路中切换或刷新。',
   author: 'community',
@@ -37,7 +37,10 @@ const FALLBACK_CATS = [
 ];
 
 export default function (hg) {
+  const ENDPOINT_URLS = STATIC_LINES.map(function (e) { return e.url; });
+  let activeOrigin = '';
   function origin() {
+    if (activeOrigin) return activeOrigin;
     const cur = hg.endpoint && hg.endpoint.current;
     if (cur && typeof cur.url === 'string' && cur.url) return cur.url.replace(/\/$/, '');
     return SITE;
@@ -60,26 +63,58 @@ export default function (hg) {
     return { 'User-Agent': UA, Referer: origin() + '/' };
   }
 
+  // 同一路径请求已声明的镜像，不拿首页 200 当作目标页面/视频可用。
+  // 仅在本实例记住成功镜像，不修改宿主当前线路或持久设置。
   async function fetchHtml(url, ctx, allow404) {
-    let res;
-    for (let i = 0; i < 2; i++) {
-      res = await hg.http.fetch({
-        url,
-        headers: headers(),
-        responseType: 'text',
-        timeoutMs: 20000,
-        retry: 1,
-        maxBytes: 8 * 1024 * 1024,
-        signal: ctx && ctx.signal,
-      });
-      if (res.status < 500) break;     // 搜索偶发 502，再试一次
+    const deadline = Date.now() + 15000;
+    const known = ENDPOINT_URLS.slice();
+    const cached = await hg.storage.get(LINES_KEY);
+    // 发布页解析器只缓存 CloudFront 根地址；拒绝缓存里的 HTTP/凭据/任意域名。
+    if (Array.isArray(cached)) for (let i = 0; i < Math.min(cached.length, 24); i++) {
+      const u = cached[i] && cached[i].url;
+      if (typeof u === 'string' && /^https:\/\/[a-z0-9]+\.cloudfront\.net\/?$/i.test(u)) {
+        const base = u.replace(/\/$/, '');
+        if (known.indexOf(base) < 0) known.push(base);
+      }
     }
-    if (res.status === 404) {
-      if (allow404) return '';
-      fail('NOT_FOUND', '页面不存在');
+    const parsed = new URL(url);
+    const candidates = [parsed.origin];
+    if (known.indexOf(parsed.origin) >= 0) known.forEach(function (u) { if (candidates.indexOf(u) < 0) candidates.push(u); });
+    let last;
+    for (let i = 0; i < candidates.length; i++) {
+      if (ctx && ctx.signal && ctx.signal.aborted) fail('CANCELLED', '调用已取消');
+      const left = deadline - Date.now();
+      if (left <= 0) { last = new hg.PluginError('TIMEOUT', '镜像切换预算已用尽'); break; }
+      const base = candidates[i];
+      let res;
+      try {
+        res = await hg.http.fetch({ url: base + url.slice(parsed.origin.length),
+          headers: Object.assign({}, headers(), { Referer: base + '/' }), responseType: 'text',
+          timeoutMs: Math.min(6000, left), retry: 0, credentials: 'omit', maxBytes: 6 * 1024 * 1024, signal: ctx && ctx.signal });
+      } catch (e) {
+        if (!e || ['NETWORK', 'TIMEOUT'].indexOf(e.code) < 0) throw e;
+        last = e; continue;
+      }
+      if (ctx && ctx.signal && ctx.signal.aborted) fail('CANCELLED', '调用已取消');
+      if (res.status === 404) { if (allow404) return ''; fail('NOT_FOUND', '页面不存在'); }
+      if (res.status === 401) fail('AUTH_REQUIRED', '页面需要登录');
+      if (res.status === 429) fail('RATE_LIMITED', '站点请求过于频繁，请稍后重试');
+      if (res.status === 403 || res.status === 408 || res.status >= 500) {
+        last = new hg.PluginError('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）'); continue;
+      }
+      if (!res.ok) fail('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）');
+      const body = typeof res.data === 'string' ? res.data : '';
+      const sample = body.slice(0, 65536);
+      // 目标页面必须有本站内容标记；空页、停放页、200 验证页不晋升为当前镜像。
+      const challenge = /cf-chl-|challenge-platform|<title>\s*(?:Just a moment|Attention Required)|Checking your browser|verify you are human/i.test(sample);
+      const content = /class=["'][^"']*(?:dplayer|post-title|post-content|post-card|post-list|page-navigator)|<article\b/i.test(body);
+      if (!body.trim() || challenge || !content) {
+        last = new hg.PluginError('UPSTREAM_CHANGED', '镜像未返回可识别的目标内容页'); continue;
+      }
+      activeOrigin = base;
+      return body;
     }
-    if (!res.ok) fail('UPSTREAM_ERROR', '页面暂时不可用（HTTP ' + res.status + '）');
-    return typeof res.data === 'string' ? res.data : '';
+    throw last || new hg.PluginError('NETWORK', '所有已声明镜像均不可达');
   }
 
   function absUrl(href) {

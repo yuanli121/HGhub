@@ -1,7 +1,7 @@
 export const meta = {
   id: 'cg91.source',
   name: '91吃瓜',
-  version: '1.0.1',
+  version: '1.0.2',
   protocol: 1,
   kind: 'source',
   description: '91吃瓜网（91cg1.com）：二十五分类分页、搜索、详情多段视频；正文封面是 AES-128-CBC 密文，交给宿主原生 transform 解密；播放走 DPlayer 配置里的 HLS 直链。',
@@ -40,7 +40,6 @@ const CATS = [
   { slug: 'hjll', label: '海角乱伦' },
   { slug: 'xyjj', label: '校园禁忌' },
   { slug: 'zptp', label: '自拍偷拍' },
-  { slug: 'sstp', label: '实时监控' },
   { slug: 'fclv', label: '反差靓女' },
   { slug: 'lqzk', label: '猎奇重口' },
   { slug: 'crdm', label: '成人动漫' },
@@ -49,9 +48,6 @@ const CATS = [
   { slug: 'qwys', label: '社会奇闻' },
   { slug: 'lpsd', label: '深夜撸片' },
   { slug: 'tgqg', label: '投稿求瓜' },
-  { slug: 'wish', label: '求瓜心愿墙' },
-  { slug: 'zdtop', label: '91周榜' },
-  { slug: 'ydtop', label: '91月榜' },
   { slug: 'rsdg', label: '最高点击' },
   { slug: 'sports-live', label: '体育直播' },
 ];

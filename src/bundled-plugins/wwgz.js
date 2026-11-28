@@ -1,7 +1,7 @@
 export const meta = {
   id: 'wwgz',
   name: '农民影视',
-  version: '1.0.2',
+  version: '1.0.3',
   protocol: 1,
   description: '农民影视：分类、搜索、多线路详情与 nmvod 播放解析。',
   author: 'community',
@@ -145,7 +145,7 @@ export default function (hg) {
         });
         if (!res.ok) fail('UPSTREAM_ERROR', '搜索暂时不可用（HTTP ' + res.status + '）');
         // 站点搜索模板缺失时返回「缺少文件：…vod_search.html」（2026-11 起，PC/WAP 均如此）
-        if (/缺少文件|vod_search\.html/.test(res.data || '')) fail('UNAVAILABLE', '站点搜索功能已损坏（服务端缺少模板），请从分类浏览');
+        if (/缺少文件|vod_search\.html/.test(res.data || '')) fail('UPSTREAM_ERROR', '站点搜索功能已损坏（服务端缺少模板），请从分类浏览');
         return { items: parseCards(res.data), next: null };
       },
     },

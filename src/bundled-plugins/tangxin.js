@@ -1,7 +1,7 @@
 export const meta = {
   id: 'tangxin',
   name: '糖心Vlog',
-  version: '1.0.0',
+  version: '1.0.1',
   protocol: 1,
   description: '糖心Vlog（tangxinvlog.pro）：全部作品 / 博主 / 题材标签分类，站内搜索（基于站点 search-index.json），HLS(AES-128) 播放。',
   author: 'community',
@@ -99,7 +99,7 @@ export default function (hg) {
         const n = a.first('.name');
         if (m && n) kids.push({ id: 'a:' + decodeURIComponent(m[1]), label: clean(n.text()) });
       });
-      if (kids.length) tree.push({ id: 'artists', label: '博主', children: kids });
+      if (kids.length) tree.push({ id: 'artists', label: '博主', children: kids.slice(0, 100) });
     } catch (e) { /* 忽略 */ }
     try {
       const html = await fetchHtml('/tags/', ctx);
@@ -115,7 +115,9 @@ export default function (hg) {
         const label = clean(a.text()).replace(/\s*\d+$/, '') || name;
         kids.push({ id: 't:' + name, label });
       });
-      if (kids.length) tree.push({ id: 'tags', label: '题材标签', children: kids });
+      // 站点有 184 个标签、91 个博主，宿主 children 上限 100：超出会被丢弃并报 warn。
+      // 标签页本身按条目数降序（丝袜 382 → 长尾个位数），取前 100 即保留热门，丢的都是冷标签。
+      if (kids.length) tree.push({ id: 'tags', label: '题材标签', children: kids.slice(0, 100) });
     } catch (e) { /* 忽略 */ }
     catCache = tree;
     return tree;

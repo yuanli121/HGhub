@@ -1,7 +1,7 @@
 export const meta = {
   id: 'haose',
   name: '好色TV',
-  version: '1.0.1',
+  version: '1.0.2',
   protocol: 1,
   description: '好色TV（boot.pirvmpmir.cc）：成人视频、好色短剧、好色黑料（图文帖内嵌视频）、精选分类与搜索。播放走站点 playback 接口，封面为 AES-CBC 加密图。',
   author: 'community',
@@ -425,7 +425,7 @@ export default function (hg) {
           const i = Math.max(0, Math.min(vids.length - 1, parseInt(ep, 10) || 0));
           url = (vids[i] && vids[i].url) || '';
         } else fail('INVALID_ARGUMENT', '作品 ID 无效');
-        if (!url) fail('UNAVAILABLE', '站点没有下发播放地址');
+        if (!url) fail('CONTENT_LOCKED', '站点没有下发播放地址');
         // 地址带 auth_key 时效签名（约 2 小时），每次现取
         const res = { streams: [{ url, kind: 'media', format: 'hls', headers: { 'User-Agent': UA, Referer: origin() + '/' } }], expiresAt: Date.now() + 90 * 60 * 1000 };
         if (duration) res.durationSec = duration;

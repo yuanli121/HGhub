@@ -1,7 +1,7 @@
 export const meta = {
   id: 'juzong.source',
   name: '剧踪影院',
-  version: '1.0.0',
+  version: '1.0.1',
   protocol: 1,
   kind: 'source',
   description: '剧踪影院（juzong01.me）：首页分区、四分类分页、搜索、详情与「剧踪独家」加密线路解析（经 wgart 接口换取直链）。',
@@ -81,6 +81,39 @@ export default hg => {
     return hg.html.parse(await fetchText(path, ctx, ttl));
   }
 
+  const PLACEHOLDER_RE = /(?:^|\/)(?:load(?:ing)?|blank|placeholder|spacer|lazy|nopic|default)[^\/]*\.(?:gif|png|jpe?g|webp)$/i;
+
+  function coverOf(raw) {
+    const url = norm(raw);
+    if (!url || /^data:/i.test(url)) return '';
+    if (url.startsWith('//')) return `https:${url}`;
+    if (url.startsWith('/')) return `${SITE}${url}`;
+    return /^https?:\/\//i.test(url) ? url.replace(/^http:\/\//i, 'https://') : '';
+  }
+
+  function pickCover(anchor) {
+    const img = anchor.first('img');
+    const cands = [
+      anchor.attr('data-original'),
+      anchor.attr('data-src'),
+      anchor.attr('data-background'),
+      img && img.attr('data-original'),
+      img && img.attr('data-src'),
+      img && img.attr('src'),
+    ];
+    for (const cand of cands) {
+      const url = coverOf(cand);
+      if (url && !PLACEHOLDER_RE.test(url)) return url;
+    }
+    const style = norm(anchor.attr('style'));
+    const m = style.match(/url\((['"]?)([^'")]+)\1\)/i);
+    if (m) {
+      const url = coverOf(m[2]);
+      if (url && !PLACEHOLDER_RE.test(url)) return url;
+    }
+    return '';
+  }
+
   function cardsOf(root, fallbackType) {
     const out = [];
     const seen = new Set();
@@ -94,15 +127,16 @@ export default hg => {
       const title = trim(anchor.attr('title')) || trim(anchor.text());
       if (!title) continue;
       const item = { id: m[1], title, type: itemType };
-      const cover = norm(anchor.attr('data-original')) || norm(anchor.attr('src'));
-      if (cover && !/^data:/.test(cover)) item.cover = cover;
+      const cover = pickCover(anchor);
+      if (cover) item.cover = cover;
       const box = anchor.parent();
-      const badge = box && box.first('span.pic-text');
+      const badge = anchor.first('span.pic-text') || (box && box.first('span.pic-text'));
       const badgeText = badge && trim(badge.text());
-      if (badgeText && badgeText.length <= 8) item.badge = badgeText;
+      if (badgeText && badgeText.length <= 10) item.badge = badgeText;
       out.push(item);
     }
-    return out;
+    const withCover = out.filter(item => item.cover);
+    return withCover.length ? withCover : out;
   }
 
   async function wgToken(blob, ctx, force) {
@@ -241,9 +275,9 @@ export default hg => {
 
         const detail = { id, title, type: 'movie', playlists: [] };
 
-        const cover = doc.first('div.stui-content__thumb img') || doc.first('img.lazyload');
-        const coverUrl = cover && (norm(cover.attr('data-original')) || norm(cover.attr('src')));
-        if (coverUrl && !/^data:/.test(coverUrl)) detail.cover = coverUrl;
+        const poster = doc.first('div.stui-content__thumb a') || doc.first('div.stui-content__thumb img') || doc.first('img.lazyload');
+        const coverUrl = poster ? pickCover(poster.first('img') || poster) : '';
+        if (coverUrl) detail.cover = coverUrl;
 
         const crumb = doc.first('div.v_path');
         const crumbLinks = crumb ? crumb.select('a') : [];

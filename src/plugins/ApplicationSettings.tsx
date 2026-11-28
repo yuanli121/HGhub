@@ -1,6 +1,7 @@
 import ProxySettings from "./ProxySettings";
+import HomeArrangement from "./HomeArrangement";
 import { playbackSources, SourcePicker } from "./ImmersiveHome";
-import { IBack, IChevR, IGrid, ISettings, IMoon, ISun, IVolMute, IPlayF, IRefresh, ILockF, IHeart, IInfo } from "../icons";
+import { IBack, IChevR, IGrid, ISettings, IMoon, ISun, IVolMute, IPlayF, IRefresh, ILockF, IHeart, IInfo, IClose } from "../icons";
 import type { ReactNode } from "react";
 import { Toggle } from "../components/ui";
 import { useEffect, useRef, useState } from "react";
@@ -10,12 +11,13 @@ import { useStore } from "../store";
 import { APP_VERSION, isMobile } from "../environment";
 import { useHost } from "./HostContext";
 import { BrowseFrame, Notice } from "./BrowsePages";
-import { pluginError } from "./client";
+import { pluginError, type InstalledPlugin } from "./client";
 import { usePluginRequests } from "./usePluginRequests";
 import type { UpdatePolicy } from "./updateClient";
 export default function ApplicationSettings({ onBack }: { onBack: () => void }) {
   const app = useStore(), host = useHost(), [error, setError] = useState("");
   const [picker, setPicker] = useState(false);
+  const [arrange, setArrange] = useState(false);
   const available = playbackSources(host.sources), selected = available.filter(p => host.prefs.homeIds.includes(p.meta.id));
   const request = usePluginRequests(), [resolverPrefs, setResolverPrefs] = useState<Record<string, string>>({}), [clearing, setClearing] = useState(false);
   useEffect(() => { let live = true; void request<Record<string, string>>("resolver.preferences.get").then(p => { if (live) setResolverPrefs(p); }).catch(e => { if (live) setError(pluginError(e)); }); return () => { live = false; }; }, [request]);
@@ -42,6 +44,7 @@ export default function ApplicationSettings({ onBack }: { onBack: () => void }) 
       <Section title="外观"><Setting icon={app.theme==="dark"?<IMoon size={16}/>:<ISun size={16}/>} title="深色外观" description="切换应用的深色与浅色外观"><Toggle label="深色外观" on={app.theme==="dark"} onChange={on=>app.setTheme(on?"dark":"light")}/></Setting></Section>
       <Section title="播放">
         <button className="w-full text-left" onClick={()=>setPicker(true)} aria-haspopup="dialog"><Setting icon={<IGrid size={16}/>} title="首页播放片源" description={host.prefs.homeMode==="all"?`全部片源 · ${available.length} 个`:host.prefs.homeMode==="single"?selected[0]?.meta.name||"尚未选择片源":`已选择 ${selected.length} 个片源`}><IChevR size={15}/></Setting></button>
+        <button className="w-full text-left" onClick={()=>setArrange(true)} aria-haspopup="dialog"><Setting icon={<IGrid size={16}/>} title="来源顺序与置顶" description="拖动或一键置顶，调整首页来源的显示顺序"><IChevR size={15}/></Setting></button>
         <Setting icon={<IVolMute size={16}/>} title="启动时静音" description="每次启动默认静音，下次启动生效"><Toggle label="启动时静音" on={app.muteOnStartup} onChange={app.setMuteOnStartup}/></Setting>
         <Setting icon={<IPlayF size={16}/>} title="自动播放下一条" description="播完后继续下一集或下一部作品"><Toggle label="自动播放下一条" on={host.prefs.autoNext} onChange={autoNext=>host.setPrefs({autoNext})}/></Setting>
         <Setting icon={<IRefresh size={16}/>} title="播放失败后尝试其他播放流" description="尝试当前来源可用的其他播放流"><Toggle label="播放失败后尝试其他播放流" on={host.prefs.playbackFallback} onChange={playbackFallback=>host.setPrefs({playbackFallback})}/></Setting>
@@ -61,7 +64,18 @@ export default function ApplicationSettings({ onBack }: { onBack: () => void }) 
       <Section title="关于"><Setting icon={<IInfo size={16}/>} title={`HGhub ${APP_VERSION}`} description="由用户自行导入内容源与解析器的插件视频播放器"/><AppUpdateSetting/></Section>
     </div></div></div>
     {picker&&<SourcePicker plugins={available} close={()=>setPicker(false)} manage={()=>app.push({kind:"plugins"})}/>}
+    {arrange&&<ArrangementDialog sources={available} close={()=>setArrange(false)}/>}
   </div>;
+}
+
+function ArrangementDialog({ sources, close }: { sources: InstalledPlugin[]; close: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { const dialog = ref.current!; dialog.showModal(); return () => dialog.close(); }, []);
+  return <dialog ref={ref} className="hpp-source-picker" aria-labelledby="arrangement-title" onCancel={close} onClick={e => { if (e.target === e.currentTarget) close(); }}>
+    <div className="hpp-picker-heading"><div><h2 id="arrangement-title">来源顺序与置顶</h2><p>越靠上的来源在首页显示越靠前</p></div><button aria-label="关闭来源排序" onClick={close}><IClose size={20}/></button></div>
+    <div className="hpp-picker-list"><HomeArrangement sources={sources}/></div>
+    <footer><button className="primary" onClick={close}>完成</button></footer>
+  </dialog>;
 }
 
 function AppUpdateSetting() {

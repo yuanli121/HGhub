@@ -1,7 +1,7 @@
 export const meta = {
   id: 'jisu.source',
   name: '极速追剧',
-  version: '1.0.0',
+  version: '1.0.1',
   protocol: 1,
   kind: 'source',
   description: '极速追剧（jisuzhuiju.com）：首页五个分区、五个频道分页、搜索、详情与多线路 HLS 直连。',
@@ -17,8 +17,10 @@ const CHANNELS = [
   { id: '2', label: '电影' },
   { id: '3', label: '动漫' },
   { id: '4', label: '综艺' },
-  { id: '5', label: '短剧' },
 ];
+
+// 短剧频道（channel=5）整条线都挂在已停用的 vv.jisuzyv.com 上，目录保留没有意义
+const HIDDEN_CHANNELS = new Set(['5']);
 
 const DETAIL_RE = /^https?:\/\/(?:www\.)?jisuzhuiju\.com\/detail\/(\d+)\.html/i;
 const PLAY_RE = /^https?:\/\/(?:www\.)?jisuzhuiju\.com\/vodplay\/(\d+)-([a-z0-9]+)-(\d+)\.html/i;
@@ -121,6 +123,7 @@ export default hg => {
 
       async list(params, ctx) {
         const id = trim(params.categoryId);
+        if (HIDDEN_CHANNELS.has(id)) throw new hg.PluginError('INVALID_ARGUMENT', '这个频道暂时没有可播放的资源');
         const channel = CHANNELS.find(c => c.id === id);
         if (!channel) throw new hg.PluginError('INVALID_ARGUMENT', '分类 ID 不合法');
         const want = pageNo(params.cursor);

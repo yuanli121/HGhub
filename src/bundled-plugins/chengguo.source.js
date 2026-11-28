@@ -1,12 +1,12 @@
 export const meta = {
   id: 'chengguo.source',
   name: '橙果短剧',
-  version: '1.0.0',
+  version: '1.0.2',
   protocol: 1,
   kind: 'source',
   description: '橙果短剧（chengguodj.com）：首页分区、五个频道分页、搜索、详情与 HLS 直连；接口走 AES+签名，插件内自解。',
   mature: true,
-  linkDomains: ['chengguodj.com', 'www.chengguodj.com', 'api2.chengguodj.com', 'hls.ohjzmm.cn', 'pic.gyezbp.cn', 'imgpublic.ycomesc.live'],
+  linkDomains: ['chengguodj.com', 'www.chengguodj.com', 'api2.chengguodj.com', 'hls.ohjzmm.cn', 'pic.gyezbp.cn', 'pic.mmgbaa.cn', 'imgpublic.ycomesc.live'],
   timeouts: { read: 20, playback: 30 },
 };
 
@@ -46,10 +46,13 @@ const pageNo = cursor => {
   return Number.isInteger(n) && n > 0 ? n : 1;
 };
 
+const CRYPT_PIC_HOSTS = /(?:gyezbp\.cn|mmgbaa\.cn|chengguopic\.|cglive\.)/i;
+
 function plainPic(url) {
   const raw = norm(url);
   if (!/^https?:\/\//i.test(raw)) return '';
-  return /gyezbp\.cn/i.test(raw) ? raw.replace(/^https?:\/\/[^/]+/i, `https://${PLAIN_PIC_HOST}`) : raw;
+  // 加密图床只吐 AES 密文，换成同路径的明文图床
+  return CRYPT_PIC_HOSTS.test(raw) ? raw.replace(/^https?:\/\/[^/]+/i, `https://${PLAIN_PIC_HOST}`) : raw;
 }
 
 export default hg => {

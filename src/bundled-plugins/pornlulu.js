@@ -1,7 +1,7 @@
 export const meta = {
   id: 'pornlulu',
   name: '撸撸视频 Pornlulu',
-  version: '1.0.0',
+  version: '1.0.2',
   protocol: 1,
   description: 'Pornlulu（撸撸）：首页、分类、排行、搜索、详情与 HLS 播放。站点前置 CDNLah「工作量验证」（SHA-256 PoW），插件内自动求解并缓存通行 Cookie。',
   author: 'community',
@@ -34,6 +34,7 @@ const FALLBACK_CATS = [
 
 export default function (hg) {
   let solving = null;
+  let pendingChallenge = null;   // { cfg, at }：未解完的 PoW 题目，跨调用接力
   let memCookie = null;   // { value, expiresAt }
 
   function origin() {
@@ -113,17 +114,38 @@ export default function (hg) {
     return true;
   }
 
-  function solvePow(seed, difficulty) {
+  // 宿主对一次连续同步执行有 1 秒上限（超过即强行中断，连续 3 次停用插件），一次调用还有约 30 秒时限。
+  // 难度 4 期望 65536 次 digest，手机上可能要一分钟以上，所以：
+  //  ① 每 40ms 让出一次事件循环（QuickJS 实测最长连续段 54ms）；
+  //  ② 进度按 seed 记在插件内存里，本次调用快到时限就先返回「请稍后重试」，下次调用从断点接着算；
+  //  ③ 同一时间只算一份，其它并发调用等它。
+  function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
+  const powProgress = {};   // seed -> 下一个要试的 nonce
+  async function solvePow(seed, difficulty, ctx) {
     const limit = Math.pow(16, difficulty) * 24;   // 期望 16^d 次，24 倍时失败概率 < e^-24
     const t0 = Date.now();
-    for (let n = 0; n < limit; n++) {
+    let n = powProgress[seed] || 0;
+    let slice = Date.now();
+    for (; n < limit; n++) {
       const nonce = hex16(n);
       const h = hg.crypto.digest('sha256', seed + nonce);
       if (leadingZeroNibbles(h, difficulty)) {
+        delete powProgress[seed];
         hg.log.info('pow solved', { tries: n + 1, ms: Date.now() - t0, difficulty });
         return nonce;
       }
+      if (Date.now() - slice > 40) {
+        if (ctx && ctx.signal && ctx.signal.aborted) { powProgress[seed] = n; return null; }
+        if (ctx && typeof ctx.deadline === 'number' && ctx.deadline - Date.now() < 2000) {
+          powProgress[seed] = n + 1;
+          // RATE_LIMITED 要带 retryAfterSec，宿主据此在该时间内禁止重试并提示（协议 §8.2）
+          fail('RATE_LIMITED', '站点安全验证计算中（已尝试 ' + (n + 1) + ' 次），请稍后下拉刷新', { retryAfterSec: 3 });
+        }
+        await tick();
+        slice = Date.now();
+      }
     }
+    delete powProgress[seed];
     return null;
   }
 
@@ -160,10 +182,10 @@ export default function (hg) {
     const difficulty = Number(cfg.difficulty || 0);
     if (!seed || !difficulty || !cfg.verify_path) fail('UPSTREAM_CHANGED', '安全验证页结构已变化');
     if (difficulty > MAX_DIFFICULTY) {
-      fail('UNAVAILABLE', '站点工作量验证难度过高（' + difficulty + ' 位），插件内无法在合理时间内求解');
+      fail('UNSUPPORTED', '站点工作量验证难度过高（' + difficulty + ' 位），插件内无法在合理时间内求解');
     }
-    const nonce = solvePow(seed, difficulty);
-    if (!nonce) fail('UNAVAILABLE', '工作量验证求解失败');
+    const nonce = await solvePow(seed, difficulty, ctx);
+    if (!nonce) fail('UPSTREAM_ERROR', '工作量验证求解失败');
     const form = {
       seed,
       nonce,
@@ -205,8 +227,11 @@ export default function (hg) {
       if (cfg) {
         memCookie = null;
         try { await hg.storage.delete(POW_KEY); } catch (_) {}
+        // 未解完的题目继续用原题（实测题目放置 3 分钟后提交仍有效），否则断点进度作废
+        if (!pendingChallenge || Date.now() - pendingChallenge.at > 150000) pendingChallenge = { cfg, at: Date.now() };
         if (!solving) {
-          solving = passChallenge(cfg, ctx).then(function (v) { solving = null; return v; }, function (e) { solving = null; throw e; });
+          const task = pendingChallenge.cfg;
+          solving = passChallenge(task, ctx).then(function (v) { solving = null; pendingChallenge = null; return v; }, function (e) { solving = null; throw e; });
         }
         await solving;
         continue;
@@ -286,7 +311,7 @@ export default function (hg) {
       }
       if (out.length) return out;
     } catch (e) {
-      if (e && e.code === 'UNAVAILABLE') throw e;
+      if (e && e.code === 'RATE_LIMITED') throw e;
     }
     return FALLBACK_CATS.map(function (c) { return { id: 'cat:' + c[0], label: c[1], sorts: SORTS }; });
   }

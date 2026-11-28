@@ -1,7 +1,7 @@
 export const meta = {
   id: 'porna91',
   name: '91Porna',
-  version: '1.0.1',
+  version: '1.0.2',
   protocol: 1,
   description: '91Porna（91porna.com）：12 个榜单分类、搜索、详情与 HLS 播放（播放接口 + CDN 鉴权头）。',
   author: 'community',
@@ -175,11 +175,11 @@ export default function (hg) {
         h.Referer = pageUrl; h.Origin = SITE; h['Content-Type'] = 'application/json'; h.Accept = 'application/json';
         const res = await hg.http.fetch({ url: SITE + '/api/videos/' + vid + '/playback', method: 'POST', headers: h, body: '{}', responseType: 'json', timeoutMs: 15000, credentials: 'omit', signal: ctx && ctx.signal });
         const j = res.data;
-        if (!res.ok || !j || j.status !== 1 || !j.data || !j.data.streams) fail('UNAVAILABLE', '播放接口未返回可用地址（可能需要登录或会员）');
+        if (!res.ok || !j || j.status !== 1 || !j.data || !j.data.streams) fail('CONTENT_LOCKED', '播放接口未返回可用地址（可能需要登录或会员）');
         const st = j.data.streams;
         const urls = [];
         [st.main, st.hevc, st.preview].forEach(function (u) { if (u && /^https:\/\//.test(u) && urls.indexOf(u) < 0) urls.push(u); });
-        if (!urls.length) fail('UNAVAILABLE', '播放接口未返回可用地址（可能需要登录或会员）');
+        if (!urls.length) fail('CONTENT_LOCKED', '播放接口未返回可用地址（可能需要登录或会员）');
         const sh = { 'User-Agent': UA, Referer: SITE + '/' };
         const cdn = j.data.cdn;
         if (cdn && cdn.authKey && cdn.authValue) sh[cdn.authKey] = cdn.authValue;
