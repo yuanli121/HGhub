@@ -78,12 +78,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -n "${APPLE_CERTIFICATE:-}" ]; then
-            pnpm tauri ios build --bundles ipa
+            pnpm tauri ios build
           else
-            # 无证书：只出 .app（跳过签名），归档步骤用 Payload 打包成 unsigned ipa，
+            # 无证书：环境变量让 xcodebuild 跳过签名，归档步骤用 Payload 打包成 unsigned ipa，
             # SideStore/AltStore 用自己的 Apple ID 重签即可侧载
             echo "::warning::未配置 Apple 签名证书，输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
-            pnpm tauri ios build --bundles app
+            export CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+            pnpm tauri ios build
           fi
 
       - name: 归档 ipa
