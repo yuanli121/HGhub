@@ -85,16 +85,7 @@ jobs:
             # 归档步骤用 DerivedData 里的 .app 打 Payload 出 unsigned ipa（SideStore 可重签侧载）
             echo "::warning::未配置 Apple 签名证书，输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
             PBX="src-tauri/gen/apple/huangguo-client.xcodeproj/project.pbxproj"
-            python3 - "$PBX" <<'EOF'
-import sys, re
-p = sys.argv[1]
-t = open(p).read()
-t = t.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
-t = re.sub(r'DEVELOPMENT_TEAM = [A-Z0-9]+;', '', t)
-t = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*";', 'PROVISIONING_PROFILE_SPECIFIER = "";', t)
-open(p, 'w').write(t)
-print('pbxproj patched: Manual signing, no team')
-EOF
+            python3 -c "import re,sys;p=sys.argv[1];t=open(p).read();t=t.replace('CODE_SIGN_STYLE = Automatic;','CODE_SIGN_STYLE = Manual;');t=re.sub(r'DEVELOPMENT_TEAM = [A-Z0-9]+;','',t);t=re.sub(r'PROVISIONING_PROFILE_SPECIFIER = \"[^\"]*\";','PROVISIONING_PROFILE_SPECIFIER = \"\";',t);open(p,'w').write(t);print('pbxproj patched: Manual signing, no team')" "$PBX"
             export CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
             pnpm tauri ios build || echo "::warning::tauri ios build 返回非零，尝试用 .app 产物兜底打包"
           fi
