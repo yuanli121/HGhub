@@ -81,9 +81,11 @@ jobs:
             pnpm tauri ios build
           else
             # 无证书：环境变量让 xcodebuild 跳过签名，归档步骤用 Payload 打包成 unsigned ipa，
-            # SideStore/AltStore 用自己的 Apple ID 重签即可侧载
+            # SideStore/AltStore 用自己的 Apple ID 重签即可侧载。
+            # 注意 CODE_SIGN_STYLE=Manual + 空 DEVELOPMENT_TEAM 才能过 Automatic 模式的 team 检查
             echo "::warning::未配置 Apple 签名证书，输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
             export CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+            export CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER=""
             pnpm tauri ios build
           fi
 
