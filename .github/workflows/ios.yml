@@ -66,6 +66,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: 升级 tauri CLI（2.12+ 支持 ios build --no-sign）
+        run: pnpm add -D @tauri-apps/cli@2.13.0
+
       - name: 生成 iOS 工程
         run: pnpm tauri ios init --ci
 
@@ -80,32 +83,11 @@ jobs:
           if [ -n "${APPLE_CERTIFICATE:-}" ]; then
             pnpm tauri ios build
           else
-            # 无证书：CLI 的 ios build 不暴露跳签参数，直接手动 xcodebuild：
-            # 前端资产由 Rust generate_context! 编译期嵌入，先 pnpm build 出 dist 即可。
-            # pbxproj 补丁（Automatic→Manual、清 team）+ 命令行 build settings 双保险跳签，
-            # 产物用 Payload 打包成 unsigned ipa（SideStore/AltStore 可重签侧载）
-            echo "::warning::未配置 Apple 签名证书，手动 xcodebuild 输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
-            pnpm build
-            cd src-tauri/gen/apple
-            PBX="huangguo-client.xcodeproj/project.pbxproj"
-            python3 -c "import re,sys;p=sys.argv[1];t=open(p).read();t=t.replace('CODE_SIGN_STYLE = Automatic;','CODE_SIGN_STYLE = Manual;');t=re.sub(r'DEVELOPMENT_TEAM = [A-Z0-9]+;','',t);t=re.sub(r'PROVISIONING_PROFILE_SPECIFIER = \"[^\"]*\";','PROVISIONING_PROFILE_SPECIFIER = \"\";',t);open(p,'w').write(t);print('pbxproj patched')" "$PBX"
-            # tauri ios init 只生成 xcodeproj（无 Pods 无 workspace），按实际存在选
-            if [ -d huangguo-client.xcworkspace ]; then
-              PROJARG="-workspace huangguo-client.xcworkspace"
-            else
-              PROJARG="-project huangguo-client.xcodeproj"
-            fi
-            SCHEME="huangguo-client_iOS"
-            if ! xcodebuild $PROJARG -list 2>/dev/null | grep -q "huangguo-client_iOS"; then
-              SCHEME="$(xcodebuild $PROJARG -list 2>/dev/null | awk '/Schemes:/{f=1;next} f && NF {print $1; exit}')"
-            fi
-            echo "PROJARG=$PROJARG SCHEME=$SCHEME"
-            xcodebuild $PROJARG -scheme "$SCHEME" \
-              -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
-              -derivedDataPath build \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" \
-              build
+            # 无证书：tauri-cli 2.12+ 的 --no-sign（PR #15061）：
+            # xcodebuild 跳签 build+archive，从 xcarchive 取 .app 打包 unsigned ipa，
+            # 供 SideStore/AltStore 用自己的 Apple ID 重签侧载
+            echo "::warning::未配置 Apple 签名证书，tauri ios build --no-sign 输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
+            pnpm tauri ios build --no-sign --ci
           fi
 
       - name: 归档 ipa
