@@ -78,10 +78,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -n "${APPLE_CERTIFICATE:-}" ]; then
-            pnpm tauri ios build
+            pnpm tauri ios build --bundles ipa
           else
-            echo "::warning::未配置 Apple 签名证书，输出 ad-hoc ipa（需 Sideloadly/AltStore 重签侧载）"
-            pnpm tauri ios build --signing-identity -
+            # 无证书：只出 .app（跳过签名），归档步骤用 Payload 打包成 unsigned ipa，
+            # SideStore/AltStore 用自己的 Apple ID 重签即可侧载
+            echo "::warning::未配置 Apple 签名证书，输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
+            pnpm tauri ios build --bundles app
           fi
 
       - name: 归档 ipa
