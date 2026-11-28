@@ -89,7 +89,18 @@ jobs:
             cd src-tauri/gen/apple
             PBX="huangguo-client.xcodeproj/project.pbxproj"
             python3 -c "import re,sys;p=sys.argv[1];t=open(p).read();t=t.replace('CODE_SIGN_STYLE = Automatic;','CODE_SIGN_STYLE = Manual;');t=re.sub(r'DEVELOPMENT_TEAM = [A-Z0-9]+;','',t);t=re.sub(r'PROVISIONING_PROFILE_SPECIFIER = \"[^\"]*\";','PROVISIONING_PROFILE_SPECIFIER = \"\";',t);open(p,'w').write(t);print('pbxproj patched')" "$PBX"
-            xcodebuild -workspace huangguo-client.xcworkspace -scheme huangguo-client_iOS \
+            # tauri ios init 只生成 xcodeproj（无 Pods 无 workspace），按实际存在选
+            if [ -d huangguo-client.xcworkspace ]; then
+              PROJARG="-workspace huangguo-client.xcworkspace"
+            else
+              PROJARG="-project huangguo-client.xcodeproj"
+            fi
+            SCHEME="huangguo-client_iOS"
+            if ! xcodebuild $PROJARG -list 2>/dev/null | grep -q "huangguo-client_iOS"; then
+              SCHEME="$(xcodebuild $PROJARG -list 2>/dev/null | awk '/Schemes:/{f=1;next} f && NF {print $1; exit}')"
+            fi
+            echo "PROJARG=$PROJARG SCHEME=$SCHEME"
+            xcodebuild $PROJARG -scheme "$SCHEME" \
               -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
               -derivedDataPath build \
               CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
