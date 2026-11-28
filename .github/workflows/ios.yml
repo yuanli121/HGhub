@@ -80,24 +80,36 @@ jobs:
           if [ -n "${APPLE_CERTIFICATE:-}" ]; then
             pnpm tauri ios build
           else
-            # 无证书：环境变量让 xcodebuild 跳过签名，归档步骤用 Payload 打包成 unsigned ipa，
-            # SideStore/AltStore 用自己的 Apple ID 重签即可侧载。
-            # 注意 CODE_SIGN_STYLE=Manual + 空 DEVELOPMENT_TEAM 才能过 Automatic 模式的 team 检查
+            # 无证书：直接补丁 pbxproj（Automatic→Manual、清 team），tauri CLI 内部传参
+            # 覆盖不了环境变量，改工程文件最稳。tauri 的 ipa 打包即使失败也不阻断，
+            # 归档步骤用 DerivedData 里的 .app 打 Payload 出 unsigned ipa（SideStore 可重签侧载）
             echo "::warning::未配置 Apple 签名证书，输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
+            PBX="src-tauri/gen/apple/huangguo-client.xcodeproj/project.pbxproj"
+            python3 - "$PBX" <<'EOF'
+import sys, re
+p = sys.argv[1]
+t = open(p).read()
+t = t.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
+t = re.sub(r'DEVELOPMENT_TEAM = [A-Z0-9]+;', '', t)
+t = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*";', 'PROVISIONING_PROFILE_SPECIFIER = "";', t)
+open(p, 'w').write(t)
+print('pbxproj patched: Manual signing, no team')
+EOF
             export CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
-            export CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER=""
-            pnpm tauri ios build
+            pnpm tauri ios build || echo "::warning::tauri ios build 返回非零，尝试用 .app 产物兜底打包"
           fi
 
       - name: 归档 ipa
         run: |
           mkdir -p artifacts
-          IPADIR="src-tauri/gen/apple/build/ios"
-          find "$IPADIR" -name '*.ipa' -exec cp {} artifacts/ \; || true
+          # tauri 用系统默认 DerivedData，产物不在 gen/apple 下
+          DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
+          find "$DERIVED" -name '*.ipa' -exec cp {} artifacts/ \; 2>/dev/null || true
           if ! ls artifacts/*.ipa >/dev/null 2>&1; then
             # 兜底：手动打 unsigned ipa（Payload 打包法）
-            APPDIR="$(find "$IPADIR" -name '*.app' -type d | head -1)"
+            APPDIR="$(find "$DERIVED" -path '*Release-iphoneos*' -name '*.app' -type d 2>/dev/null | head -1)"
             if [ -n "$APPDIR" ]; then
+              echo "using app: $APPDIR"
               mkdir -p Payload && cp -R "$APPDIR" Payload/ && zip -qr "artifacts/HGhub-integrated_${{ steps.ver.outputs.version }}_ios.ipa" Payload && rm -rf Payload
             else
               echo "::error::没有找到 ipa 或 app 产物"; exit 1
