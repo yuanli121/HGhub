@@ -80,24 +80,33 @@ jobs:
           if [ -n "${APPLE_CERTIFICATE:-}" ]; then
             pnpm tauri ios build
           else
-            # 无证书：tauri-cli 的 --no-sign 走 skip_codesign 流程并自动打 unsigned ipa
-            # （源码 build.rs: create_ipa 直出，SideStore/AltStore 可重签侧载）。
-            # 先打印 help 确认参数名，防 CLI 版本差异
-            echo "::warning::未配置 Apple 签名证书，输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
-            pnpm tauri ios build --help
-            pnpm tauri ios build --no-sign
+            # 无证书：CLI 的 ios build 不暴露跳签参数，直接手动 xcodebuild：
+            # 前端资产由 Rust generate_context! 编译期嵌入，先 pnpm build 出 dist 即可。
+            # pbxproj 补丁（Automatic→Manual、清 team）+ 命令行 build settings 双保险跳签，
+            # 产物用 Payload 打包成 unsigned ipa（SideStore/AltStore 可重签侧载）
+            echo "::warning::未配置 Apple 签名证书，手动 xcodebuild 输出 unsigned ipa（需 SideStore/AltStore 重签侧载）"
+            pnpm build
+            cd src-tauri/gen/apple
+            PBX="huangguo-client.xcodeproj/project.pbxproj"
+            python3 -c "import re,sys;p=sys.argv[1];t=open(p).read();t=t.replace('CODE_SIGN_STYLE = Automatic;','CODE_SIGN_STYLE = Manual;');t=re.sub(r'DEVELOPMENT_TEAM = [A-Z0-9]+;','',t);t=re.sub(r'PROVISIONING_PROFILE_SPECIFIER = \"[^\"]*\";','PROVISIONING_PROFILE_SPECIFIER = \"\";',t);open(p,'w').write(t);print('pbxproj patched')" "$PBX"
+            xcodebuild -workspace huangguo-client.xcworkspace -scheme huangguo-client_iOS \
+              -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" \
+              build
           fi
 
       - name: 归档 ipa
         run: |
           mkdir -p artifacts
-          # 产物可能在 gen/apple/build/ios 或系统 DerivedData，两个地方都找
-          GENIOS="src-tauri/gen/apple/build/ios"
+          # 产物可能位置：gen/apple/build（手动 xcodebuild -derivedDataPath）或系统 DerivedData
+          GENBUILD="src-tauri/gen/apple/build"
           DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
-          find "$GENIOS" "$DERIVED" -name '*.ipa' -exec cp {} artifacts/ \; 2>/dev/null || true
+          find "$GENBUILD" "$DERIVED" -name '*.ipa' -exec cp {} artifacts/ \; 2>/dev/null || true
           if ! ls artifacts/*.ipa >/dev/null 2>&1; then
             # 兜底：手动打 unsigned ipa（Payload 打包法）
-            APPDIR="$(find "$DERIVED" "$GENIOS" -path '*Release-iphoneos*' -name '*.app' -type d 2>/dev/null | head -1)"
+            APPDIR="$(find "$DERIVED" "$GENBUILD" -path '*Release-iphoneos*' -name '*.app' -type d 2>/dev/null | head -1)"
             if [ -n "$APPDIR" ]; then
               echo "using app: $APPDIR"
               mkdir -p Payload && cp -R "$APPDIR" Payload/ && zip -qr "artifacts/HGhub-integrated_${{ steps.ver.outputs.version }}_ios.ipa" Payload && rm -rf Payload
