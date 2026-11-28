@@ -106,9 +106,10 @@ try {
   const code = (await readFile(join(root, "tests/fixtures/plugin-local.js"), "utf8")).replaceAll("__FIXTURE_BASE__", base);
   await page.getByRole("textbox", { name: "插件代码" }).fill(code); await page.getByRole("button", { name: "导入代码", exact: true }).click();
   await installedTab(page);
-  await page.getByText("已就绪", { exact: true }).waitFor({ state: "attached" }); report.passed.push("Import evaluates the module, discovers capabilities, initializes endpoint and persists installation");
+  // 预置源（bundled-plugins）也在同一 UI 中运行，页面上会有多个「已就绪」，用 first() 等任意一个出现
+  await page.getByText("已就绪", { exact: true }).first().waitFor({ state: "attached" }); report.passed.push("Import evaluates the module, discovers capabilities, initializes endpoint and persists installation");
   await page.screenshot({ path: join(output, "management-dark.png") });
-  await page.getByRole("button", { name: /查看 .* 的设置与日志/ }).click();
+  await page.getByRole("button", { name: "查看 本地虚构影院 的设置与日志" }).click();
   await page.getByRole("button", { name: "探测站点线路", exact: true }).click();
   await page.getByText(/本机测试线路 · 可达/).waitFor();
   await page.getByRole("button", { name: "刷新站点线路", exact: true }).click();
@@ -182,7 +183,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event("hpp.changed")));
   await page.getByRole("textbox", { name: "搜索所有插件" }).fill("fail"); await page.locator(".hpp-search").getByRole("button", { name: "搜索", exact: true }).click(); await page.getByRole("alert").filter({ hasText: "虚构源暂时不可用" }).waitFor();
   await page.getByRole("button", { name: "插件中心", exact: true }).click(); await page.getByRole("switch", { name: /^启用 / }).click(); await page.getByText("已停用", { exact: true }).waitFor({ state: "attached" }); await page.getByRole("switch", { name: /^启用 / }).click(); await page.getByText("已就绪", { exact: true }).waitFor({ state: "attached" });
-  await page.reload(); await page.getByRole("button", { name: "插件中心", exact: true }).click(); await page.getByText("已就绪", { exact: true }).waitFor({ state: "attached" });
+  await page.reload(); await page.getByRole("button", { name: "插件中心", exact: true }).click(); await page.getByText("已就绪", { exact: true }).first().waitFor({ state: "attached" });
   const preference = await page.evaluate(() => JSON.parse(localStorage.getItem("hpp.playback.servers"))[JSON.stringify(["source", "fixture.local"])]);
   assert.equal(preference, "source-backup");
   report.passed.push("Source streams and playback servers can be selected while preserving the current position, and stage-scoped server choices persist across episodes and reload");
